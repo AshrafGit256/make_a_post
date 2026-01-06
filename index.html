@@ -121,13 +121,18 @@
             transition: transform 0.2s, box-shadow 0.2s;
         }
 
-        button:hover {
+        button:hover:not(:disabled) {
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
         }
 
-        button:active {
+        button:active:not(:disabled) {
             transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
         .post {
@@ -260,7 +265,6 @@
             margin-bottom: 20px;
         }
 
-        /* Image preview in upload area */
         .image-preview {
             margin-top: 15px;
             text-align: center;
@@ -273,7 +277,6 @@
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
-        /* Modal for full image view */
         .modal {
             display: none;
             position: fixed;
@@ -316,6 +319,40 @@
         .close-modal:hover {
             color: #bbb;
         }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: white;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .username-input {
+            margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
@@ -324,10 +361,13 @@
 
         <div class="header">
             <h1><span>✨</span> Mini Image Feed</h1>
-            <p>Share your moments with the world</p>
+            <p>Share your moments with everyone</p>
         </div>
 
         <div class="card">
+            <div class="username-input">
+                <input type="text" id="username" placeholder="Your name" maxlength="20">
+            </div>
             <input type="text" id="caption" placeholder="Write a caption...">
             
             <div class="file-input-wrapper">
@@ -338,13 +378,19 @@
             </div>
 
             <div id="imagePreview" class="image-preview"></div>
+            <div id="errorMessage"></div>
             
-            <button onclick="createPost()">📤 Post Image</button>
+            <button onclick="createPost()" id="postBtn">📤 Post Image</button>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Loading posts...</p>
         </div>
 
         <div id="posts"></div>
 
-        <div id="emptyState" class="empty-state">
+        <div id="emptyState" class="empty-state" style="display: none;">
             <div class="empty-state-icon">📸</div>
             <h3>No posts yet</h3>
             <p>Be the first to share something!</p>
@@ -352,15 +398,30 @@
 
     </div>
 
-    <!-- Image Modal -->
     <div id="imageModal" class="modal" onclick="closeModal()">
         <span class="close-modal">&times;</span>
         <img class="modal-content" id="modalImage">
     </div>
 
     <script>
+        const STORAGE_PREFIX = 'posts:';
         let posts = [];
-        let likeCount = {};
+        let userLikes = {};
+
+        // Load username from browser
+        let currentUsername = localStorage.getItem('username') || '';
+        if (currentUsername) {
+            document.getElementById('username').value = currentUsername;
+        }
+
+        // Save username when changed
+        document.getElementById('username').addEventListener('blur', function() {
+            const username = this.value.trim();
+            if (username) {
+                localStorage.setItem('username', username);
+                currentUsername = username;
+            }
+        });
 
         // File input preview
         document.getElementById("imageInput").addEventListener("change", function(e) {
@@ -369,6 +430,12 @@
             const previewDiv = document.getElementById("imagePreview");
             
             if (file) {
+                if (file.size > 5 * 1024 * 1024) {
+                    showError("Image must be smaller than 5MB");
+                    this.value = '';
+                    return;
+                }
+                
                 fileLabel.textContent = `✓ ${file.name}`;
                 fileLabel.classList.add("has-file");
                 
@@ -384,79 +451,166 @@
             }
         });
 
-        function createPost() {
+        async function createPost() {
+            const usernameInput = document.getElementById("username").value.trim();
             const caption = document.getElementById("caption").value.trim();
             const imageInput = document.getElementById("imageInput");
-            const postsDiv = document.getElementById("posts");
-            const emptyState = document.getElementById("emptyState");
+            const postBtn = document.getElementById("postBtn");
+            const errorDiv = document.getElementById("errorMessage");
+
+            errorDiv.innerHTML = "";
+
+            if (!usernameInput) {
+                showError("Please enter your name");
+                return;
+            }
 
             if (imageInput.files.length === 0) {
-                alert("Please select an image");
+                showError("Please select an image");
                 return;
             }
 
             if (!caption) {
-                alert("Please write a caption");
+                showError("Please write a caption");
                 return;
             }
 
             const imageFile = imageInput.files[0];
-            const imageURL = URL.createObjectURL(imageFile);
-            const postId = Date.now();
+            
+            postBtn.disabled = true;
+            postBtn.textContent = "Posting...";
 
-            const post = {
-                id: postId,
-                imageURL: imageURL,
-                caption: caption,
-                timestamp: new Date().toLocaleString()
-            };
+            try {
+                // Convert image to base64
+                const base64Image = await fileToBase64(imageFile);
+                
+                const post = {
+                    id: Date.now().toString(),
+                    username: usernameInput,
+                    caption: caption,
+                    imageData: base64Image,
+                    timestamp: new Date().toISOString(),
+                    likes: 0
+                };
 
-            posts.unshift(post);
-            likeCount[postId] = 0;
+                // Save to storage
+                await window.storage.set(`${STORAGE_PREFIX}${post.id}`, JSON.stringify(post), true);
 
-            renderPosts();
+                // Reload posts
+                await loadPosts();
 
-            // Hide empty state
+                // Clear inputs
+                document.getElementById("caption").value = "";
+                imageInput.value = "";
+                document.getElementById("fileLabel").textContent = "📷 Choose an image";
+                document.getElementById("fileLabel").classList.remove("has-file");
+                document.getElementById("imagePreview").innerHTML = "";
+
+                showError("Post shared successfully! 🎉", false);
+            } catch (error) {
+                console.error('Error creating post:', error);
+                showError("Failed to post. Please try again.");
+            } finally {
+                postBtn.disabled = false;
+                postBtn.textContent = "📤 Post Image";
+            }
+        }
+
+        async function loadPosts() {
+            const loadingDiv = document.getElementById("loading");
+            const postsDiv = document.getElementById("posts");
+            const emptyState = document.getElementById("emptyState");
+
+            loadingDiv.style.display = "block";
             emptyState.style.display = "none";
 
-            // Clear inputs
-            document.getElementById("caption").value = "";
-            imageInput.value = "";
-            document.getElementById("fileLabel").textContent = "📷 Choose an image";
-            document.getElementById("fileLabel").classList.remove("has-file");
-            document.getElementById("imagePreview").innerHTML = "";
+            try {
+                // List all posts
+                const result = await window.storage.list(STORAGE_PREFIX, true);
+                
+                if (!result || !result.keys || result.keys.length === 0) {
+                    posts = [];
+                    emptyState.style.display = "block";
+                    loadingDiv.style.display = "none";
+                    postsDiv.innerHTML = "";
+                    return;
+                }
+
+                // Load each post
+                const postPromises = result.keys.map(async (key) => {
+                    try {
+                        const postResult = await window.storage.get(key, true);
+                        if (postResult && postResult.value) {
+                            return JSON.parse(postResult.value);
+                        }
+                    } catch (e) {
+                        console.error('Error loading post:', e);
+                        return null;
+                    }
+                });
+
+                const loadedPosts = await Promise.all(postPromises);
+                posts = loadedPosts.filter(p => p !== null);
+
+                // Sort by timestamp (newest first)
+                posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+                // Load user likes from localStorage
+                const savedLikes = localStorage.getItem('userLikes');
+                if (savedLikes) {
+                    userLikes = JSON.parse(savedLikes);
+                }
+
+                renderPosts();
+            } catch (error) {
+                console.error('Error loading posts:', error);
+                showError("Failed to load posts. Please refresh the page.");
+            } finally {
+                loadingDiv.style.display = "none";
+            }
         }
 
         function renderPosts() {
             const postsDiv = document.getElementById("posts");
+            const emptyState = document.getElementById("emptyState");
+            
+            if (posts.length === 0) {
+                emptyState.style.display = "block";
+                postsDiv.innerHTML = "";
+                return;
+            }
+
+            emptyState.style.display = "none";
             postsDiv.innerHTML = "";
 
             posts.forEach(post => {
                 const postCard = document.createElement("div");
                 postCard.className = "card post";
 
+                const timeAgo = getTimeAgo(new Date(post.timestamp));
+                const isLiked = userLikes[post.id] || false;
+                const likeIcon = isLiked ? "❤️" : "🤍";
+                const likedClass = isLiked ? "liked" : "";
+
                 postCard.innerHTML = `
                     <div class="post-header">
-                        <div class="avatar">U</div>
+                        <div class="avatar">${post.username.charAt(0).toUpperCase()}</div>
                         <div class="post-info">
-                            <div class="post-author">You</div>
-                            <div class="post-time">${post.timestamp}</div>
+                            <div class="post-author">${escapeHtml(post.username)}</div>
+                            <div class="post-time">${timeAgo}</div>
                         </div>
                     </div>
-                    <div class="caption">${post.caption}</div>
-                    <div class="post-image-container" onclick="openModal('${post.imageURL}')">
-                        <img src="${post.imageURL}" alt="Post image">
+                    <div class="caption">${escapeHtml(post.caption)}</div>
+                    <div class="post-image-container" onclick="openModal('${post.id}')">
+                        <img src="${post.imageData}" alt="Post image">
                     </div>
                     <div class="post-actions">
-                        <button class="action-btn like-btn" onclick="toggleLike(${post.id})">
-                            <span id="like-icon-${post.id}">🤍</span>
-                            <span id="like-count-${post.id}">${likeCount[post.id]}</span>
+                        <button class="action-btn like-btn ${likedClass}" onclick="toggleLike('${post.id}')">
+                            <span id="like-icon-${post.id}">${likeIcon}</span>
+                            <span id="like-count-${post.id}">${post.likes}</span>
                         </button>
                         <button class="action-btn">
                             💬 Comment
-                        </button>
-                        <button class="action-btn delete-btn" onclick="deletePost(${post.id})">
-                            🗑️ Delete
                         </button>
                     </div>
                 `;
@@ -465,46 +619,89 @@
             });
         }
 
-        function toggleLike(postId) {
+        async function toggleLike(postId) {
             const likeBtn = document.querySelector(`#like-icon-${postId}`).parentElement;
             const likeIcon = document.getElementById(`like-icon-${postId}`);
             const likeCountSpan = document.getElementById(`like-count-${postId}`);
 
-            if (likeBtn.classList.contains("liked")) {
+            const post = posts.find(p => p.id === postId);
+            if (!post) return;
+
+            const wasLiked = userLikes[postId] || false;
+
+            if (wasLiked) {
                 likeBtn.classList.remove("liked");
                 likeIcon.textContent = "🤍";
-                likeCount[postId]--;
+                post.likes = Math.max(0, post.likes - 1);
+                userLikes[postId] = false;
             } else {
                 likeBtn.classList.add("liked");
                 likeIcon.textContent = "❤️";
-                likeCount[postId]++;
+                post.likes++;
+                userLikes[postId] = true;
             }
 
-            likeCountSpan.textContent = likeCount[postId];
-        }
+            likeCountSpan.textContent = post.likes;
 
-        function deletePost(postId) {
-            if (confirm("Are you sure you want to delete this post?")) {
-                posts = posts.filter(post => post.id !== postId);
-                delete likeCount[postId];
-                
-                if (posts.length === 0) {
-                    document.getElementById("emptyState").style.display = "block";
-                }
-                
-                renderPosts();
+            // Save to localStorage
+            localStorage.setItem('userLikes', JSON.stringify(userLikes));
+
+            // Update in storage
+            try {
+                await window.storage.set(`${STORAGE_PREFIX}${postId}`, JSON.stringify(post), true);
+            } catch (error) {
+                console.error('Error updating like:', error);
             }
         }
 
-        function openModal(imageURL) {
+        function openModal(postId) {
             const modal = document.getElementById("imageModal");
             const modalImg = document.getElementById("modalImage");
-            modal.style.display = "block";
-            modalImg.src = imageURL;
+            const post = posts.find(p => p.id === postId);
+            
+            if (post) {
+                modal.style.display = "block";
+                modalImg.src = post.imageData;
+            }
         }
 
         function closeModal() {
             document.getElementById("imageModal").style.display = "none";
+        }
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function getTimeAgo(date) {
+            const seconds = Math.floor((new Date() - date) / 1000);
+            
+            if (seconds < 60) return 'Just now';
+            if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+            if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
+            
+            return date.toLocaleDateString();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showError(message, isError = true) {
+            const errorDiv = document.getElementById("errorMessage");
+            errorDiv.innerHTML = `<div class="error-message" style="background: ${isError ? '#fee' : '#e8f5e9'}; color: ${isError ? '#c33' : '#2e7d32'}">${message}</div>`;
+            
+            setTimeout(() => {
+                errorDiv.innerHTML = "";
+            }, 3000);
         }
 
         // Close modal with Escape key
@@ -513,6 +710,12 @@
                 closeModal();
             }
         });
+
+        // Load posts on page load
+        loadPosts();
+
+        // Refresh posts every 30 seconds
+        setInterval(loadPosts, 30000);
     </script>
 
 </body>
