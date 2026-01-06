@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mini Image Feed</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: auto;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            margin-bottom: 20px;
+            transition: transform 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+        }
+
+        h2 {
+            margin-top: 0;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin: 0;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .header span {
+            color: #ffd700;
+        }
+
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.95;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            margin-top: 15px;
+            overflow: hidden;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            background: #f5f5f5;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .file-input-label:hover {
+            background: #ebebeb;
+            border-color: #667eea;
+        }
+
+        .file-input-label.has-file {
+            border-color: #4caf50;
+            background: #e8f5e9;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            margin-top: 15px;
+            width: 100%;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .post {
+            animation: slideIn 0.4s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .post-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            margin-right: 12px;
+        }
+
+        .post-info {
+            flex: 1;
+        }
+
+        .post-author {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .post-time {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .post-image-container {
+            width: 100%;
+            margin-top: 12px;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #f5f5f5;
+            cursor: pointer;
+        }
+
+        .post img {
+            width: 100%;
+            display: block;
+            object-fit: cover;
+            max-height: 500px;
+            transition: transform 0.2s;
+        }
+
+        .post-image-container:hover img {
+            transform: scale(1.02);
+        }
+
+        .caption {
+            margin-top: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #333;
+        }
+
+        .post-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .action-btn {
+            background: none;
+            border: none;
+            color: #666;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 5px 10px;
+            margin: 0;
+            width: auto;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: color 0.2s;
+        }
+
+        .action-btn:hover {
+            color: #667eea;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .action-btn.liked {
+            color: #e74c3c;
+        }
+
+        .delete-btn {
+            margin-left: auto;
+            color: #e74c3c;
+        }
+
+        .delete-btn:hover {
+            color: #c0392b;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: white;
+            opacity: 0.8;
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        /* Image preview in upload area */
+        .image-preview {
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        .image-preview img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Modal for full image view */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            margin: auto;
+            display: block;
+            max-width: 90%;
+            max-height: 90%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 20px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .close-modal:hover {
+            color: #bbb;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+
+        <div class="header">
+            <h1><span>✨</span> Mini Image Feed</h1>
+            <p>Share your moments with the world</p>
+        </div>
+
+        <div class="card">
+            <input type="text" id="caption" placeholder="Write a caption...">
+            
+            <div class="file-input-wrapper">
+                <input type="file" id="imageInput" accept="image/*">
+                <label for="imageInput" class="file-input-label" id="fileLabel">
+                    📷 Choose an image
+                </label>
+            </div>
+
+            <div id="imagePreview" class="image-preview"></div>
+            
+            <button onclick="createPost()">📤 Post Image</button>
+        </div>
+
+        <div id="posts"></div>
+
+        <div id="emptyState" class="empty-state">
+            <div class="empty-state-icon">📸</div>
+            <h3>No posts yet</h3>
+            <p>Be the first to share something!</p>
+        </div>
+
+    </div>
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="modal" onclick="closeModal()">
+        <span class="close-modal">&times;</span>
+        <img class="modal-content" id="modalImage">
+    </div>
+
+    <script>
+        let posts = [];
+        let likeCount = {};
+
+        // File input preview
+        document.getElementById("imageInput").addEventListener("change", function(e) {
+            const file = e.target.files[0];
+            const fileLabel = document.getElementById("fileLabel");
+            const previewDiv = document.getElementById("imagePreview");
+            
+            if (file) {
+                fileLabel.textContent = `✓ ${file.name}`;
+                fileLabel.classList.add("has-file");
+                
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    previewDiv.innerHTML = `<img src="${event.target.result}" alt="Preview">`;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                fileLabel.textContent = "📷 Choose an image";
+                fileLabel.classList.remove("has-file");
+                previewDiv.innerHTML = "";
+            }
+        });
+
+        function createPost() {
+            const caption = document.getElementById("caption").value.trim();
+            const imageInput = document.getElementById("imageInput");
+            const postsDiv = document.getElementById("posts");
+            const emptyState = document.getElementById("emptyState");
+
+            if (imageInput.files.length === 0) {
+                alert("Please select an image");
+                return;
+            }
+
+            if (!caption) {
+                alert("Please write a caption");
+                return;
+            }
+
+            const imageFile = imageInput.files[0];
+            const imageURL = URL.createObjectURL(imageFile);
+            const postId = Date.now();
+
+            const post = {
+                id: postId,
+                imageURL: imageURL,
+                caption: caption,
+                timestamp: new Date().toLocaleString()
+            };
+
+            posts.unshift(post);
+            likeCount[postId] = 0;
+
+            renderPosts();
+
+            // Hide empty state
+            emptyState.style.display = "none";
+
+            // Clear inputs
+            document.getElementById("caption").value = "";
+            imageInput.value = "";
+            document.getElementById("fileLabel").textContent = "📷 Choose an image";
+            document.getElementById("fileLabel").classList.remove("has-file");
+            document.getElementById("imagePreview").innerHTML = "";
+        }
+
+        function renderPosts() {
+            const postsDiv = document.getElementById("posts");
+            postsDiv.innerHTML = "";
+
+            posts.forEach(post => {
+                const postCard = document.createElement("div");
+                postCard.className = "card post";
+
+                postCard.innerHTML = `
+                    <div class="post-header">
+                        <div class="avatar">U</div>
+                        <div class="post-info">
+                            <div class="post-author">You</div>
+                            <div class="post-time">${post.timestamp}</div>
+                        </div>
+                    </div>
+                    <div class="caption">${post.caption}</div>
+                    <div class="post-image-container" onclick="openModal('${post.imageURL}')">
+                        <img src="${post.imageURL}" alt="Post image">
+                    </div>
+                    <div class="post-actions">
+                        <button class="action-btn like-btn" onclick="toggleLike(${post.id})">
+                            <span id="like-icon-${post.id}">🤍</span>
+                            <span id="like-count-${post.id}">${likeCount[post.id]}</span>
+                        </button>
+                        <button class="action-btn">
+                            💬 Comment
+                        </button>
+                        <button class="action-btn delete-btn" onclick="deletePost(${post.id})">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                `;
+
+                postsDiv.appendChild(postCard);
+            });
+        }
+
+        function toggleLike(postId) {
+            const likeBtn = document.querySelector(`#like-icon-${postId}`).parentElement;
+            const likeIcon = document.getElementById(`like-icon-${postId}`);
+            const likeCountSpan = document.getElementById(`like-count-${postId}`);
+
+            if (likeBtn.classList.contains("liked")) {
+                likeBtn.classList.remove("liked");
+                likeIcon.textContent = "🤍";
+                likeCount[postId]--;
+            } else {
+                likeBtn.classList.add("liked");
+                likeIcon.textContent = "❤️";
+                likeCount[postId]++;
+            }
+
+            likeCountSpan.textContent = likeCount[postId];
+        }
+
+        function deletePost(postId) {
+            if (confirm("Are you sure you want to delete this post?")) {
+                posts = posts.filter(post => post.id !== postId);
+                delete likeCount[postId];
+                
+                if (posts.length === 0) {
+                    document.getElementById("emptyState").style.display = "block";
+                }
+                
+                renderPosts();
+            }
+        }
+
+        function openModal(imageURL) {
+            const modal = document.getElementById("imageModal");
+            const modalImg = document.getElementById("modalImage");
+            modal.style.display = "block";
+            modalImg.src = imageURL;
+        }
+
+        function closeModal() {
+            document.getElementById("imageModal").style.display = "none";
+        }
+
+        // Close modal with Escape key
+        document.addEventListener("keydown", function(e) {
+            if (e.key === "Escape") {
+                closeModal();
+            }
+        });
+    </script>
+
+</body>
+</html>
