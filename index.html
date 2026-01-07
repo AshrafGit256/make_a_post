@@ -353,6 +353,32 @@
         .username-input {
             margin-bottom: 15px;
         }
+
+        .setup-notice {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .setup-notice h3 {
+            margin: 0 0 10px 0;
+            color: #856404;
+        }
+
+        .setup-notice p {
+            margin: 5px 0;
+            color: #856404;
+        }
+
+        .setup-notice code {
+            background: #fff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -362,6 +388,22 @@
         <div class="header">
             <h1><span>✨</span> Mini Image Feed</h1>
             <p>Share your moments with everyone</p>
+        </div>
+
+        <div class="card setup-notice">
+            <h3>🔧 Setup Required</h3>
+            <p><strong>This app uses Firebase (free) for database storage.</strong></p>
+            <p>To enable posting and viewing shared posts, you need to:</p>
+            <ol style="margin: 10px 0; padding-left: 20px;">
+                <li>Go to <a href="https://console.firebase.google.com" target="_blank">Firebase Console</a></li>
+                <li>Create a new project (free plan)</li>
+                <li>Enable <strong>Realtime Database</strong></li>
+                <li>Set rules to: <code>".read": true, ".write": true</code></li>
+                <li>Copy your config and paste below</li>
+            </ol>
+            <p><strong>Database URL:</strong></p>
+            <input type="text" id="firebaseUrl" placeholder="https://your-project.firebasedatabase.app or .firebaseio.com" style="margin-bottom: 10px;">
+            <button onclick="saveFirebaseConfig()" style="margin-top: 5px;">Save & Connect</button>
         </div>
 
         <div class="card">
@@ -390,7 +432,7 @@
 
         <div id="posts"></div>
 
-        <div id="emptyState" class="empty-state" style="display: none;">
+        <div id="emptyState" class="empty-state">
             <div class="empty-state-icon">📸</div>
             <h3>No posts yet</h3>
             <p>Be the first to share something!</p>
@@ -404,17 +446,40 @@
     </div>
 
     <script>
-        const STORAGE_PREFIX = 'posts:';
+        let firebaseUrl = localStorage.getItem('firebaseUrl') || '';
         let posts = [];
-        let userLikes = {};
-
-        // Load username from browser
+        let userLikes = JSON.parse(localStorage.getItem('userLikes') || '{}');
         let currentUsername = localStorage.getItem('username') || '';
+
         if (currentUsername) {
             document.getElementById('username').value = currentUsername;
         }
 
-        // Save username when changed
+        if (firebaseUrl) {
+            document.getElementById('firebaseUrl').value = firebaseUrl;
+            document.querySelector('.setup-notice').style.display = 'none';
+            loadPosts();
+        }
+
+        function saveFirebaseConfig() {
+            const url = document.getElementById('firebaseUrl').value.trim();
+            if (!url) {
+                showError('Please enter your Firebase Database URL');
+                return;
+            }
+            
+            if (!url.includes('firebasedatabase.app') && !url.includes('firebaseio.com')) {
+                showError('Invalid Firebase URL. Should contain firebasedatabase.app or firebaseio.com');
+                return;
+            }
+
+            firebaseUrl = url;
+            localStorage.setItem('firebaseUrl', firebaseUrl);
+            document.querySelector('.setup-notice').style.display = 'none';
+            showError('Connected! You can now post.', false);
+            loadPosts();
+        }
+
         document.getElementById('username').addEventListener('blur', function() {
             const username = this.value.trim();
             if (username) {
@@ -423,15 +488,14 @@
             }
         });
 
-        // File input preview
         document.getElementById("imageInput").addEventListener("change", function(e) {
             const file = e.target.files[0];
             const fileLabel = document.getElementById("fileLabel");
             const previewDiv = document.getElementById("imagePreview");
             
             if (file) {
-                if (file.size > 5 * 1024 * 1024) {
-                    showError("Image must be smaller than 5MB");
+                if (file.size > 500 * 1024) {
+                    showError("Image must be smaller than 500KB for better performance");
                     this.value = '';
                     return;
                 }
@@ -452,13 +516,15 @@
         });
 
         async function createPost() {
+            if (!firebaseUrl) {
+                showError('Please configure Firebase first');
+                return;
+            }
+
             const usernameInput = document.getElementById("username").value.trim();
             const caption = document.getElementById("caption").value.trim();
             const imageInput = document.getElementById("imageInput");
             const postBtn = document.getElementById("postBtn");
-            const errorDiv = document.getElementById("errorMessage");
-
-            errorDiv.innerHTML = "";
 
             if (!usernameInput) {
                 showError("Please enter your name");
@@ -481,25 +547,31 @@
             postBtn.textContent = "Posting...";
 
             try {
-                // Convert image to base64
                 const base64Image = await fileToBase64(imageFile);
                 
                 const post = {
-                    id: Date.now().toString(),
                     username: usernameInput,
                     caption: caption,
                     imageData: base64Image,
-                    timestamp: new Date().toISOString(),
+                    timestamp: Date.now(),
                     likes: 0
                 };
 
-                // Save to storage
-                await window.storage.set(`${STORAGE_PREFIX}${post.id}`, JSON.stringify(post), true);
+                const url = firebaseUrl.replace(/\/$/, '') + '/posts.json';
+                const response = await fetch(url, {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(post)
+                });
 
-                // Reload posts
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
                 await loadPosts();
 
-                // Clear inputs
                 document.getElementById("caption").value = "";
                 imageInput.value = "";
                 document.getElementById("fileLabel").textContent = "📷 Choose an image";
@@ -509,7 +581,13 @@
                 showError("Post shared successfully! 🎉", false);
             } catch (error) {
                 console.error('Error creating post:', error);
-                showError("Failed to post. Please try again.");
+                if (error.message.includes('Failed to fetch')) {
+                    showError("Connection failed. Make sure Firebase Rules allow writing (see setup instructions)");
+                } else if (error.message.includes('Permission denied')) {
+                    showError("Permission denied. Set Firebase Rules to: {'.read': true, '.write': true}");
+                } else {
+                    showError(`Error: ${error.message}`);
+                }
             } finally {
                 postBtn.disabled = false;
                 postBtn.textContent = "📤 Post Image";
@@ -517,6 +595,8 @@
         }
 
         async function loadPosts() {
+            if (!firebaseUrl) return;
+
             const loadingDiv = document.getElementById("loading");
             const postsDiv = document.getElementById("posts");
             const emptyState = document.getElementById("emptyState");
@@ -525,46 +605,37 @@
             emptyState.style.display = "none";
 
             try {
-                // List all posts
-                const result = await window.storage.list(STORAGE_PREFIX, true);
-                
-                if (!result || !result.keys || result.keys.length === 0) {
-                    posts = [];
-                    emptyState.style.display = "block";
-                    loadingDiv.style.display = "none";
-                    postsDiv.innerHTML = "";
-                    return;
-                }
-
-                // Load each post
-                const postPromises = result.keys.map(async (key) => {
-                    try {
-                        const postResult = await window.storage.get(key, true);
-                        if (postResult && postResult.value) {
-                            return JSON.parse(postResult.value);
-                        }
-                    } catch (e) {
-                        console.error('Error loading post:', e);
-                        return null;
-                    }
+                const url = firebaseUrl.replace(/\/$/, '') + '/posts.json';
+                const response = await fetch(url, {
+                    method: 'GET',
+                    mode: 'cors'
                 });
 
-                const loadedPosts = await Promise.all(postPromises);
-                posts = loadedPosts.filter(p => p !== null);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
 
-                // Sort by timestamp (newest first)
-                posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                const data = await response.json();
 
-                // Load user likes from localStorage
-                const savedLikes = localStorage.getItem('userLikes');
-                if (savedLikes) {
-                    userLikes = JSON.parse(savedLikes);
+                if (!data) {
+                    posts = [];
+                    emptyState.style.display = "block";
+                } else {
+                    posts = Object.entries(data).map(([id, post]) => ({
+                        id,
+                        ...post
+                    }));
+                    posts.sort((a, b) => b.timestamp - a.timestamp);
                 }
 
                 renderPosts();
             } catch (error) {
                 console.error('Error loading posts:', error);
-                showError("Failed to load posts. Please refresh the page.");
+                if (error.message.includes('Failed to fetch')) {
+                    showError("Connection failed. Check: 1) Firebase Rules are set to public 2) URL is correct 3) Database exists");
+                } else {
+                    showError(`Error: ${error.message}`);
+                }
             } finally {
                 loadingDiv.style.display = "none";
             }
@@ -620,35 +691,36 @@
         }
 
         async function toggleLike(postId) {
-            const likeBtn = document.querySelector(`#like-icon-${postId}`).parentElement;
-            const likeIcon = document.getElementById(`like-icon-${postId}`);
-            const likeCountSpan = document.getElementById(`like-count-${postId}`);
+            if (!firebaseUrl) return;
 
             const post = posts.find(p => p.id === postId);
             if (!post) return;
 
             const wasLiked = userLikes[postId] || false;
+            post.likes = wasLiked ? Math.max(0, post.likes - 1) : post.likes + 1;
+            userLikes[postId] = !wasLiked;
+
+            localStorage.setItem('userLikes', JSON.stringify(userLikes));
+
+            const likeBtn = document.querySelector(`#like-icon-${postId}`).parentElement;
+            const likeIcon = document.getElementById(`like-icon-${postId}`);
+            const likeCountSpan = document.getElementById(`like-count-${postId}`);
 
             if (wasLiked) {
                 likeBtn.classList.remove("liked");
                 likeIcon.textContent = "🤍";
-                post.likes = Math.max(0, post.likes - 1);
-                userLikes[postId] = false;
             } else {
                 likeBtn.classList.add("liked");
                 likeIcon.textContent = "❤️";
-                post.likes++;
-                userLikes[postId] = true;
             }
-
             likeCountSpan.textContent = post.likes;
 
-            // Save to localStorage
-            localStorage.setItem('userLikes', JSON.stringify(userLikes));
-
-            // Update in storage
             try {
-                await window.storage.set(`${STORAGE_PREFIX}${postId}`, JSON.stringify(post), true);
+                await fetch(`${firebaseUrl}/posts/${postId}.json`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ likes: post.likes })
+                });
             } catch (error) {
                 console.error('Error updating like:', error);
             }
@@ -701,20 +773,13 @@
             
             setTimeout(() => {
                 errorDiv.innerHTML = "";
-            }, 3000);
+            }, 4000);
         }
 
-        // Close modal with Escape key
         document.addEventListener("keydown", function(e) {
-            if (e.key === "Escape") {
-                closeModal();
-            }
+            if (e.key === "Escape") closeModal();
         });
 
-        // Load posts on page load
-        loadPosts();
-
-        // Refresh posts every 30 seconds
         setInterval(loadPosts, 30000);
     </script>
 
